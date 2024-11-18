@@ -47,15 +47,16 @@ class SpaceShip:
         self.hit_displacement = []
         self.is_hit = False
         self.hit_timer = 0
-        self.hit_duration = 60 
+        self.hit_duration = 60
+        self.under_protection = False
+        self.protection_duration = self.hit_duration * 10
+        self.protection_timer = 0
         print("init - xc = "+str(xc)+" yc = "+str(yc))
         # self.rocket = p.mixer.Sound('mixkit_rocket.wav')  # courtesy of mixkit.co
         return
     
     def update(self):
-        if self.is_hit:
-            # self.hit_timer -= 1
-            # Apply outward movement to vertices
+        if self.is_hit:        
             self.vertices = [
                 (vx + dx, vy + dy) 
                 for (vx, vy), (dx, dy) in zip(self.vertices, self.hit_displacement)
@@ -68,6 +69,12 @@ class SpaceShip:
                 self.hit_timer = 0
                 self.reset_for_respawn()
         else:
+            if self.under_protection:
+                self.protection_timer += 1
+                if self.protection_timer > self.protection_duration:
+                    self.under_protection = False
+                    self.protection_timer = 0
+
             self.update_vertices()
             # Regular movement logic
             self.move_me()
@@ -78,7 +85,6 @@ class SpaceShip:
         """ Start the hit animation and calculate displacement directions for vertices. """
         self.lose_life()
         self.is_hit = True
-        self.hit_timer = 30  # Frames for the hit effect
         self.original_vertices = self.vertices[:]
         self.hit_displacement = []
 
@@ -88,6 +94,11 @@ class SpaceShip:
             dx = m.cos(angle) * 2  # Displacement speed
             dy = m.sin(angle) * 2
             self.hit_displacement.append((dx, dy))
+
+    def protective_shield(self, extend_protection = False):
+        if extend_protection:
+            self.protection_timer = 0
+        self.under_protection = True
     
     def reset_for_respawn(self):
         self.x, self.y, self.heading = screen_width//2, screen_height//2, 90
@@ -233,7 +244,7 @@ class SpaceShip:
     
 
 class Asteroid:
-    def __init__(self, screen_width, screen_height, position = None, radius = None, velocity = None, log_file='asteroid.log'):
+    def __init__(self, screen_width, screen_height, position = None, radius = None, velocity = None, color = None, vitamin = False, log_file='asteroid.log'):
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.radius = random.randint(20, 50) if not radius else radius
@@ -246,7 +257,8 @@ class Asteroid:
         self.vertices = self.generate_vertices()
         self.off_screen = False
         self.logger = setup_logging(log_file, 'asteroid_logger')
-        self.color = get_random_color()
+        self.color = get_random_color() if not color else color
+        self.vitamin_asteroid = vitamin
         # Log the initialization message
         self.logger.debug(f'Initialized {self!r}')
 
@@ -298,13 +310,6 @@ class Asteroid:
 
         return fragments
     
-    def lump_asteroid(self, asteroid1, asteroid2):
-        if asteroid1.radius >= asteroid2.radius:
-            ...
-        else:
-            ...
-        ...
-   
 
     def get_inward_velocity(self):
             # Target the screen center
@@ -467,6 +472,7 @@ class Game:
         self.spawn_timer = 0
         self.bullets_to_remove = set()
         self.logger = setup_logging(log_file, 'game_logger')
+        self.vitamin_counter = 0
 
 
     def game_restart(self):
@@ -479,8 +485,8 @@ class Game:
         self.bullets_to_remove = set()
 
     
-    def spawn_asteroid(self):
-        asteroid = Asteroid(screen_width, screen_height)
+    def spawn_asteroid(self, vitamin):
+        asteroid = Asteroid(screen_width, screen_height, vitamin = vitamin)
         self.asteroids.append(asteroid)
     
     def update_asteroids(self):
@@ -491,9 +497,10 @@ class Game:
                 self.asteroids.remove(asteroid)
             else:
                 asteroid.vertices = asteroid.generate_vertices()
+                if asteroid.vitamin_asteroid:
+                    asteroid.color = get_random_color()
 
     #  new logic for collision start
-
     def detect_player_asteroid_collision(self, polygon, line_start, line_end):
         """ Check if a line segment intersects with the polygon """
         n = len(polygon)
@@ -507,14 +514,24 @@ class Game:
                 return True
         return False
         
-    def asteroid_collide_player(self, spaceship_vertices, asteroid_vertices):
+    def asteroid_collide_player(self, spaceship_vertices, asteroid_vertices, asteroid):
         for i in range(0, len(spaceship_vertices) - 1):
             line_start = spaceship_vertices[i]
             line_end = spaceship_vertices[i+1]
             collision_detected = self.detect_player_asteroid_collision(asteroid_vertices, line_start, line_end)
             if collision_detected:
                 if not self.player.is_hit:
-                    self.player.trigger_hit_effect()
+                    if asteroid.vitamin_asteroid and not self.player.under_protection:
+                        self.player.protective_shield()
+                        self.asteroids.remove(asteroid)
+                    elif asteroid.vitamin_asteroid and self.player.under_protection:
+                        self.player.protective_shield(extend_protection = True)
+                        self.asteroids.remove(asteroid)
+                        ...
+                    elif self.player.under_protection:
+                        self.asteroids.remove(asteroid)
+                    else:
+                        self.player.trigger_hit_effect()
                 break
         ...
 
@@ -523,13 +540,27 @@ class Game:
         for asteroid in self.asteroids:
             asteroid_vertices = asteroid.vertices
             if not self.player.is_hit:
-                self.asteroid_collide_player(spaceship_vertices, asteroid_vertices)
+                self.asteroid_collide_player(spaceship_vertices, asteroid_vertices, asteroid)
 
         self.asteroid_collide_asteroid()
 
+
+    def lump_asteroid(self, asteroid1, asteroid2):
+        if asteroid1.radius >= asteroid2.radius:
+            radius = asteroid1.radius + asteroid2.radius
+            position = asteroid1.position
+            velocity = asteroid1.velocity
+            color = asteroid1.color
+        else:
+            radius = asteroid1.radius + asteroid2.radius
+            position = asteroid2.position
+            velocity = asteroid2.velocity
+            color = asteroid2.color
+        one_big_asteroid = Asteroid(screen_width, screen_height, position = position, radius = radius, velocity = velocity, color = color)
+        return one_big_asteroid
+
     def handle_asteroid_collision(self, asteroid1, asteroid2):
         """ Handle the collision response, like splitting asteroids or applying velocity changes """
-        # Example: Split the asteroids if they are large enough
         new_fragments = []
 
         if asteroid1.color != asteroid2.color:
@@ -539,12 +570,10 @@ class Game:
             if asteroid2.radius > 30:
                 new_asteroids = asteroid2.split_asteroid()
                 new_fragments.extend(new_asteroids)
-
-            return new_fragments
         else:
-            # call lump_asteroid
-            ...
-        ...
+            new_fragments.append(self.lump_asteroid(asteroid1, asteroid2))
+            
+        return new_fragments
 
     def detect_collision(self, polygon1, polygon2):
         """ Check if any edge of polygon1 intersects with any edge of polygon2 """
@@ -596,24 +625,11 @@ class Game:
             self.asteroids.remove(asteroid)
 
     def update(self):
-        '''
-        self.player.move_me()
-        self.player.update_position()
-        self.player.update_vertices()
-        self.player.update_bullets()
-        '''
         self.player.update()
         self.update_asteroids()
         self.asteroid_collision()
         self.handle_bullet_asteroid_collisions()
-        # check collision with player
         self.spawn_asteroid_periodically()
-        '''
-        for asteroid in self.asteroids:
-            asteroid.move()
-        for bullet in self.bullets:
-            bullet.move()
-        '''
 
     def point_in_polygon(self, x, y, vertices):
         """Check if a point (x, y) is inside a polygon defined by vertices."""
@@ -661,8 +677,13 @@ class Game:
         self.logger.debug(f"Spawn Timer: {self.spawn_timer}")
         self.spawn_timer += 1
         if self.spawn_timer > 50:
-            self.spawn_asteroid()
+            vitamin = False
+            if self.vitamin_counter == 10:
+                vitamin = True
+                self.vitamin_counter = 0
+            self.spawn_asteroid(vitamin)
             self.spawn_timer = 0
+            self.vitamin_counter += 1
             
     def check_collisions(self):
         # Check for collisions between bullets and asteroids, player and asteroids

@@ -2,7 +2,7 @@ import pygame as p
 from constants import BLACK, WHITE, RED, screen_width, screen_height
 import math as m
 import random
-from generic_functions import dist, deg2rad
+from generic_functions import dist, deg2rad, get_random_color
 import logging
 from logger import setup_logging
 
@@ -35,10 +35,6 @@ class View:
        
         vertices = object.vertices
         pos = object.get_position()
-        '''
-        for i in range(0, len(vertices) - 1):
-            p.draw.line(self.screen, WHITE, vertices[i], vertices[i+1], 2)
-        '''
         color = object.color
         if use_polygon:
             p.draw.polygon(self.screen, color, vertices)
@@ -60,10 +56,45 @@ class View:
             asteroid_surface = self.draw_object(asteroid)
             # asteroid_surfaces.append(asteroid_surface)
         return asteroid_surfaces
+    
+    def draw_circle(self, xy, color, radius):
+        p.draw.circle(self.screen, color, (xy[0], xy[1]), radius)
 
     def draw_bullets(self, bullets):
         for bullet in bullets:
-            p.draw.circle(self.screen, WHITE, (bullet.x, bullet.y), 5)
+            xy = (bullet.x, bullet.y)
+            radius = 5
+            color = WHITE
+            self.draw_circle(xy, color, radius)
+
+    def draw_protective_shield(self, xy, color, radius):
+        self.draw_circle(xy, color, radius)
+
+    def draw_shield(self, xy, radius):
+        width = radius * 2
+        height = radius * 2
+        x, y = xy[0], xy[1]
+        """Draw a protective shield around the spaceship."""
+        # Create a new surface with the same size as the screen
+        shield_surface = p.Surface((screen_width, screen_height), p.SRCALPHA)
+
+
+        # Set the transparency level (0 = fully transparent, 255 = fully opaque)
+        transparency = 100  # Semi-transparent
+        shield_color = (0, 255, 255, transparency)  # RGBA: Cyan with alpha
+        # shield_color = (255, 0, 0, 200)  # Bright red with higher opacity
+
+        # Draw the circle on the shield surface
+        p.draw.circle(
+            shield_surface,
+            shield_color,
+            (x, y),  # Center of the shield
+            40  # Radius of the shield
+        )
+
+        # Blit the shield surface onto the main screen
+        self.screen.blit(shield_surface, (0, 0))
+
 
     def draw_score(self, score):
         font = p.font.SysFont("Arial", 30)
@@ -98,21 +129,18 @@ class View:
     def update(self, model):
         self.screen.fill(BLACK)
         self.draw_noise()
-        # self.draw_object(model.player, use_polygon=False) if not model.player.respawn else self.player_respawn(model.player)
         self.draw_object(model.player, use_polygon=False)
+        if model.player.under_protection:
+            point = (model.player.xc, model.player.yc)
+            x,y = model.player.fix_point(point)
+            xy = (x,y)
+            color = get_random_color()
+            radius = 40
+            self.draw_shield(xy, radius)
         self.draw_asteroids(model.asteroids)
         self.draw_bullets(model.player.bullets)
         self.explode_bullets(model.bullets_to_remove)
         self.draw_hud(model.player)
         if model.player.destroyed:
             self.draw_game_over(model.player)
-        # self.player_respawn(model.player)
-        # self.draw_asteroids(model.asteroids)
-        '''
-        self.draw_asteroids(model.asteroids)
-        self.draw_bullets(model.bullets)
-        self.draw_score(model.score)
-        if model.game_over:
-            self.draw_game_over()
-        '''
         p.display.flip()  # Update the display

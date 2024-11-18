@@ -59,7 +59,6 @@ class Controller:
         self.handle_input()
         if not self.model.player.destroyed and self.game_started:
             self.model.update()
-        # self.model.check_collisions()
 
     def render(self):
         if not self.game_started:
